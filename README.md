@@ -41,13 +41,13 @@ You will fill a board with 13 photos, read outfits off it, and rearrange it. It 
 
 Select **+ ADD PHOTOS** in the header and pick all 13 files in one go.
 
-The photos land in your image library, then fill the empty squares in reading order: the 9 grid squares first, then the 4 EXTRAS squares (S, S, S, BAG). You now have a full board, but pieces are probably in the wrong squares. That is expected.
+The photos land in your image library, then fill the empty squares in reading order: the 9 grid squares first, then the 4 EXTRAS squares (SHOES, SHOES, SHOES, BAG). You now have a full board, but pieces are probably in the wrong squares. That is expected.
 
 ### Step 2: Put each piece in a square of its category
 
-Each grid square has a corner tag: **T** (top), **B** (bottom), **L** (layer). The tags never move. Your job is to get a top into every T square, a bottom into every B, a layer into every L.
+Each grid square has a corner tag: **TOP**, **BOTTOM**, or **LAYER**. The tags never move. Your job is to get a top into every TOP square, a bottom into every BOTTOM, a layer into every LAYER.
 
-Select any square that holds the wrong piece. A sheet opens with **FROM LIBRARY**. Pick the right photo for that square. Repeat until all 9 tags match their photos. Do the same for the EXTRAS column: shoes in the three **S** squares, the bag in **BAG**.
+Select any square that holds the wrong piece. A sheet opens with **FROM LIBRARY**. Pick the right photo for that square. Repeat until all 9 tags match their photos. Do the same for the EXTRAS column: shoes in the three **SHOES** squares, the bag in **BAG**.
 
 ### Step 3: Read an outfit
 

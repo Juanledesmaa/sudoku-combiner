@@ -39,7 +39,7 @@ export const LAYOUT: readonly Category[] = [
 ]
 
 export const CATEGORIES: readonly Category[] = ['top', 'bottom', 'layer']
-export const TAG: Record<Category, string> = { top: 'T', bottom: 'B', layer: 'L' }
+export const TAG: Record<Category, string> = { top: 'TOP', bottom: 'BOTTOM', layer: 'LAYER' }
 
 // D runs bottom-left to top-right; the other diagonal is three tops.
 export const LINES: Record<LineId, readonly [number, number, number]> = {

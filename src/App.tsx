@@ -204,7 +204,7 @@ export default function App() {
                 <div className="extras">
                   <p className="label">EXTRAS</p>
                   <div className="extras-list">
-                    {board.extras.map((e, i) => square({ area: 'extras', index: i }, e.kind === 'shoe' ? 'S' : 'BAG', e.kind))}
+                    {board.extras.map((e, i) => square({ area: 'extras', index: i }, e.kind === 'shoe' ? 'SHOES' : 'BAG', e.kind))}
                   </div>
                 </div>
               </div>
@@ -248,7 +248,7 @@ export default function App() {
             ))}
           </div>
           <div className="look-extras">
-            <Thumb imageId={shoe.imageId} fallback="S" />
+            <Thumb imageId={shoe.imageId} fallback="SHOES" />
             <Thumb imageId={bag.imageId} fallback="BAG" />
           </div>
           <div className="viewer-actions">
