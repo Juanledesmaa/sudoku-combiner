@@ -12,3 +12,8 @@ npm run dev     # local dev
 npm test        # unit tests (layout, combos, export/import)
 npm run build   # static site in dist/
 ```
+
+## Deploy (Netlify)
+
+`netlify.toml` holds all settings. In Netlify: Add new site > Import an existing project > pick this repo > Deploy.
+Every push to `main` runs the tests, builds, and publishes `dist/`. A failing test blocks the deploy.
