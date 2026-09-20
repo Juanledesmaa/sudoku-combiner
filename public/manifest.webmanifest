@@ -1,0 +1,10 @@
+{
+  "name": "Sudoku Combiner",
+  "short_name": "Combiner",
+  "description": "Plan outfits with the sudoku packing method.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e4002b",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
