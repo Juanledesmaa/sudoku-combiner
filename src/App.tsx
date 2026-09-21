@@ -4,11 +4,11 @@ import {
 import type { DragEndEvent } from '@dnd-kit/core'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, DragEvent, ReactNode } from 'react'
+import type { CSSProperties, ChangeEvent, DragEvent, FormEvent, ReactNode } from 'react'
 import {
   bulkAdd, createBoard, db, deleteImage, exportAll, importFile, ingestFiles, lastExport, saveBoard, useImageUrl,
 } from './db'
-import { COMBO_COUNT, LAYOUT, LINES, TAG, canSwap, comboSlots, lineCombo } from './model'
+import { SHORT_TAG, SIZES, TAG, canSwap, kindsFor, comboCount, comboSlots, layoutFor, lineCombo, linesFor } from './model'
 import type { Board, LineId } from './model'
 
 type View = 'board' | 'all' | 'boards'
@@ -16,10 +16,8 @@ type Selection = { kind: 'line'; line: LineId } | { kind: 'combo'; n: number }
 type Target = { area: 'grid' | 'extras'; index: number }
 
 const CURRENT_KEY = 'sudoku-combiner:board'
-const ROWS: LineId[] = ['R1', 'R2', 'R3']
-const COLS: LineId[] = ['C1', 'C2', 'C3']
-const LINE_BY_COMBO = new Map((Object.keys(LINES) as LineId[]).map((l) => [lineCombo(l), l]))
-const pad = (n: number) => String(n).padStart(2, '0')
+const PAGE = 60 // outfits per page in the all-outfits view; 7x7 has 823,543
+const fmt = (n: number) => n.toLocaleString('en-US')
 
 const squareId = (t: Target) => `${t.area}-${t.index}`
 const parseSquareId = (id: string): Target => {
@@ -29,7 +27,7 @@ const parseSquareId = (id: string): Target => {
 
 function compatible(board: Board, a: Target, b: Target): boolean {
   if (a.area !== b.area) return false
-  if (a.area === 'grid') return canSwap(a.index, b.index)
+  if (a.area === 'grid') return canSwap(board.size, a.index, b.index)
   return a.index !== b.index && board.extras[a.index].kind === board.extras[b.index].kind
 }
 
@@ -37,11 +35,17 @@ function compatible(board: Board, a: Target, b: Target): boolean {
 let seeding: Promise<unknown> | null = null
 
 export default function App() {
-  const boards = useLiveQuery(() => db.boards.orderBy('id').toArray().then((b) => b.sort((x, y) => x.createdAt - y.createdAt)))
+  const boards = useLiveQuery(() =>
+    db.boards.toArray().then((all) =>
+      // `size ?? 3`: a tab still running the pre-size build can write a board without it.
+      all.map((b) => ({ ...b, size: b.size ?? 3 })).sort((x, y) => x.createdAt - y.createdAt),
+    ),
+  )
   const [currentId, setCurrentId] = useState(() => localStorage.getItem(CURRENT_KEY))
   const [view, setView] = useState<View>('board')
   const [selection, setSelection] = useState<Selection>({ kind: 'line', line: 'R1' })
   const [viewerOpen, setViewerOpen] = useState(false)
+  const [page, setPage] = useState(0)
   const [sheet, setSheet] = useState<Target | null>(null)
   const [dragging, setDragging] = useState<Target | null>(null)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
@@ -75,9 +79,21 @@ export default function App() {
 
   if (!boards || !board) return <p className="loading">Loading…</p>
 
-  const comboN = selection.kind === 'line' ? lineCombo(selection.line) : selection.n
-  const slots = comboSlots(comboN) // always top, bottom, layer order
+  const size = board.size
+  const layout = layoutFor(size)
+  const lines = linesFor(size)
+  const count = comboCount(size)
+  const lineByCombo = new Map(Object.keys(lines).map((l) => [lineCombo(size, l), l]))
+  // A selection made on another board may not exist at this size; fall back instead of throwing.
+  const activeLine = selection.kind === 'line' ? (lines[selection.line] ? selection.line : 'R1') : null
+  const comboN = activeLine ? lineCombo(size, activeLine) : Math.min((selection as { n: number }).n, count)
+  const slots = comboSlots(size, comboN) // always in kind order: top, bottom, layer, ...
   const lit = new Set<number>(slots)
+  const pageCount = Math.ceil(count / PAGE)
+  const pg = Math.min(page, pageCount - 1)
+  const railIds = (prefix: string) => Array.from({ length: size }, (_, i) => `${prefix}${i + 1}`)
+  // Full words stop fitting once squares get small: 5x5 and up on phones, 6x6 and up everywhere.
+  const density = size >= 6 ? 'short-tags' : size === 5 ? 'short-tags-mobile' : ''
 
   const select = (s: Selection) => {
     setSelection(s)
@@ -121,7 +137,7 @@ export default function App() {
     run(() => saveBoard({ ...board, [a.area]: swapped }))
   }
 
-  const square = (t: Target, tag: string, label: string) => {
+  const square = (t: Target, tag: string, shortTag: string, label: string) => {
     const imageId = (t.area === 'grid' ? board.grid : board.extras)[t.index].imageId
     return (
       <Square
@@ -129,6 +145,7 @@ export default function App() {
         id={squareId(t)}
         imageId={imageId}
         tag={tag}
+        shortTag={shortTag}
         label={label}
         lit={t.area === 'grid' && lit.has(t.index)}
         dimmed={!!dragging && squareId(dragging) !== squareId(t) && !compatible(board, dragging, t)}
@@ -141,7 +158,7 @@ export default function App() {
   const rail = (line: LineId) => (
     <button
       key={line}
-      className={`rail ${selection.kind === 'line' && selection.line === line ? 'on' : ''}`}
+      className={`rail ${activeLine === line ? 'on' : ''}`}
       onClick={() => select({ kind: 'line', line })}
       aria-label={`Show outfit ${line}`}
     >
@@ -149,8 +166,9 @@ export default function App() {
     </button>
   )
 
-  const shoe = board.extras[board.shoeIdx] ?? board.extras[0]
-  const bag = board.extras.find((e) => e.kind === 'bag')!
+  const shoes = board.extras.filter((e) => e.kind === 'shoe')
+  const shoe = shoes.length ? shoes[board.shoeIdx % shoes.length] : null
+  const bag = board.extras.find((e) => e.kind === 'bag') ?? null
 
   return (
     <div className="app">
@@ -159,12 +177,12 @@ export default function App() {
         <nav aria-label="Sections">
           {(['board', 'all', 'boards'] as const).map((v) => (
             <button key={v} className={view === v ? 'on' : ''} onClick={() => setView(v)}>
-              {v === 'all' ? 'ALL 27' : v.toUpperCase()}
+              {v === 'all' ? `ALL ${fmt(count)}` : v.toUpperCase()}
             </button>
           ))}
         </nav>
         <div className="actions">
-          <span className="board-name">{board.name}</span>
+          <span className="board-name">{board.name} · {size}×{size}</span>
           <label className="btn red">
             + ADD PHOTOS
             <input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={onBulk} />
@@ -188,46 +206,74 @@ export default function App() {
               onDragEnd={onDragEnd}
               onDragCancel={() => setDragging(null)}
             >
-              <div className="board">
-                <div className="cols">{COLS.map(rail)}</div>
-                <div className="rows">{ROWS.map(rail)}</div>
+              <div className={`board ${density} ${board.extras.length ? '' : 'no-extras'}`} style={{ '--n': size } as CSSProperties}>
+                <div className="cols">{railIds('C').map(rail)}</div>
+                <div className="rows">{railIds('R').map(rail)}</div>
                 <div className="grid">
-                  {board.grid.map((s, i) => square({ area: 'grid', index: i }, TAG[s.category], `${s.category} square ${i + 1}`))}
+                  {board.grid.map((_, i) =>
+                    square({ area: 'grid', index: i }, TAG[layout[i]], SHORT_TAG[layout[i]], `${layout[i]} square ${i + 1}`),
+                  )}
                 </div>
                 <button
-                  className={`rail diag ${selection.kind === 'line' && selection.line === 'D' ? 'on' : ''}`}
+                  className={`rail diag ${activeLine === 'D' ? 'on' : ''}`}
                   onClick={() => select({ kind: 'line', line: 'D' })}
                   aria-label="Show diagonal outfit"
                 >
                   D ↗
                 </button>
-                <div className="extras">
-                  <p className="label">EXTRAS</p>
-                  <div className="extras-list">
-                    {board.extras.map((e, i) => square({ area: 'extras', index: i }, e.kind === 'shoe' ? 'SHOES' : 'BAG', e.kind))}
+                {board.extras.length > 0 && (
+                  <div className="extras">
+                    <p className="label">EXTRAS</p>
+                    <div className="extras-list">
+                      {board.extras.map((e, i) => {
+                        const tag = e.kind === 'shoe' ? 'SHOES' : 'BAG'
+                        return square({ area: 'extras', index: i }, tag, tag, e.kind)
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               <DragOverlay>{dragging && <DragGhost board={board} target={dragging} />}</DragOverlay>
             </DndContext>
           )}
 
           {view === 'all' && (
-            <div className="combos">
-              {Array.from({ length: COMBO_COUNT }, (_, i) => i + 1).map((n) => (
-                <button key={n} className={`combo ${n === comboN ? 'on' : ''}`} onClick={() => select({ kind: 'combo', n })}>
-                  <span className="combo-n">
-                    {pad(n)}
-                    {LINE_BY_COMBO.has(n) && <b>{LINE_BY_COMBO.get(n)}</b>}
+            <>
+              {pageCount > 1 && (
+                <div className="pager">
+                  <button className="btn" disabled={pg === 0} onClick={() => setPage(pg - 1)}>‹ PAGE</button>
+                  <span>
+                    {fmt(pg * PAGE + 1)}–{fmt(Math.min((pg + 1) * PAGE, count))} of {fmt(count)}
                   </span>
-                  <span className="combo-imgs">
-                    {comboSlots(n).map((s) => (
-                      <Thumb key={s} imageId={board.grid[s].imageId} fallback={TAG[LAYOUT[s]]} />
-                    ))}
-                  </span>
-                </button>
-              ))}
-            </div>
+                  <button className="btn" disabled={pg === pageCount - 1} onClick={() => setPage(pg + 1)}>PAGE ›</button>
+                  <button
+                    className="btn red"
+                    onClick={() => {
+                      const n = Math.floor(Math.random() * count) + 1
+                      setPage(Math.floor((n - 1) / PAGE))
+                      select({ kind: 'combo', n })
+                    }}
+                  >
+                    RANDOM OUTFIT
+                  </button>
+                </div>
+              )}
+              <div className="combos" style={{ '--n': size } as CSSProperties}>
+                {Array.from({ length: Math.min(PAGE, count - pg * PAGE) }, (_, i) => pg * PAGE + i + 1).map((n) => (
+                  <button key={n} className={`combo ${n === comboN ? 'on' : ''}`} onClick={() => select({ kind: 'combo', n })}>
+                    <span className="combo-n">
+                      {fmt(n)}
+                      {lineByCombo.has(n) && <b>{lineByCombo.get(n)}</b>}
+                    </span>
+                    <span className="combo-imgs">
+                      {comboSlots(size, n).map((sl) => (
+                        <Thumb key={sl} imageId={board.grid[sl].imageId} fallback={SHORT_TAG[layout[sl]]} />
+                      ))}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           {view === 'boards' && (
@@ -239,24 +285,31 @@ export default function App() {
           <button className="close" onClick={() => setViewerOpen(false)} aria-label="Close outfit">×</button>
           <p className="label">SELECTED OUTFIT</p>
           <p className="big">
-            {selection.kind === 'line' ? selection.line : LINE_BY_COMBO.get(selection.n) ?? 'MIX'}
-            <small>{pad(comboN)}/27</small>
+            {activeLine ?? lineByCombo.get(comboN) ?? 'MIX'}
+            <small>{fmt(comboN)}/{fmt(count)}</small>
           </p>
           <div className="look">
-            {slots.map((s) => (
-              <Thumb key={s} imageId={board.grid[s].imageId} fallback={TAG[LAYOUT[s]]} />
+            {slots.map((sl) => (
+              <figure key={sl}>
+                <Thumb imageId={board.grid[sl].imageId} fallback="" />
+                <figcaption>{TAG[layout[sl]]}</figcaption>
+              </figure>
             ))}
           </div>
-          <div className="look-extras">
-            <Thumb imageId={shoe.imageId} fallback="SHOES" />
-            <Thumb imageId={bag.imageId} fallback="BAG" />
-          </div>
+          {(shoe || bag) && (
+            <div className="look-extras">
+              {shoe && <Thumb imageId={shoe.imageId} fallback="SHOES" />}
+              {bag && <Thumb imageId={bag.imageId} fallback="BAG" />}
+            </div>
+          )}
           <div className="viewer-actions">
-            <button className="btn" onClick={() => select({ kind: 'combo', n: comboN === 1 ? COMBO_COUNT : comboN - 1 })}>‹ PREV</button>
-            <button className="btn" onClick={() => select({ kind: 'combo', n: (comboN % COMBO_COUNT) + 1 })}>NEXT ›</button>
-            <button className="btn" onClick={() => run(() => saveBoard({ ...board, shoeIdx: (board.shoeIdx + 1) % 3 }))}>
-              SHOES {board.shoeIdx + 1}/3
-            </button>
+            <button className="btn" onClick={() => select({ kind: 'combo', n: comboN === 1 ? count : comboN - 1 })}>‹ PREV</button>
+            <button className="btn" onClick={() => select({ kind: 'combo', n: (comboN % count) + 1 })}>NEXT ›</button>
+            {shoes.length > 1 && (
+              <button className="btn" onClick={() => run(() => saveBoard({ ...board, shoeIdx: (board.shoeIdx + 1) % shoes.length }))}>
+                SHOES {(board.shoeIdx % shoes.length) + 1}/{shoes.length}
+              </button>
+            )}
           </div>
         </aside>
       </main>
@@ -288,6 +341,7 @@ interface SquareProps {
   id: string
   imageId: string | null
   tag: string
+  shortTag: string
   label: string
   lit: boolean
   dimmed: boolean
@@ -295,7 +349,7 @@ interface SquareProps {
   onFiles: (files: File[]) => void
 }
 
-function Square({ id, imageId, tag, label, lit, dimmed, onOpen, onFiles }: SquareProps) {
+function Square({ id, imageId, tag, shortTag, label, lit, dimmed, onOpen, onFiles }: SquareProps) {
   const url = useImageUrl(imageId)
   const drag = useDraggable({ id, disabled: !imageId })
   const drop = useDroppable({ id })
@@ -321,7 +375,10 @@ function Square({ id, imageId, tag, label, lit, dimmed, onOpen, onFiles }: Squar
       onDrop={onDrop}
       aria-label={imageId ? `${label}, change image` : `${label}, add image`}
     >
-      <i className="tag">{tag}</i>
+      <i className="tag">
+        <span className="full">{tag}</span>
+        <span className="short">{shortTag}</span>
+      </i>
       {url ? <img src={url} alt="" draggable={false} /> : !imageId && <span className="drop"><b>+</b>ADD PHOTO</span>}
     </button>
   )
@@ -394,9 +451,13 @@ interface BoardsProps {
 function Boards({ boards, current, onPick, run }: BoardsProps) {
   const exported = lastExport()
 
-  const create = () => {
-    const name = prompt('Board name', 'New board')?.trim()
-    if (name) run(async () => onPick((await createBoard(name)).id))
+  const [name, setName] = useState('')
+  const [size, setSize] = useState(3)
+
+  const create = (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (trimmed) run(async () => onPick((await createBoard(trimmed, size)).id))
   }
   const rename = (b: Board) => {
     const name = prompt('Rename board', b.name)?.trim()
@@ -415,7 +476,9 @@ function Boards({ boards, current, onPick, run }: BoardsProps) {
               <BoardPreview board={b} />
               <span>
                 <b>{b.name}</b>
-                <small>{b.grid.filter((s) => s.imageId).length}/9 squares</small>
+                <small>
+                  {b.size}×{b.size} · {b.grid.filter((s) => s.imageId).length}/{b.grid.length} squares
+                </small>
               </span>
             </button>
             <button className="btn" onClick={() => rename(b)}>RENAME</button>
@@ -423,8 +486,29 @@ function Boards({ boards, current, onPick, run }: BoardsProps) {
           </li>
         ))}
       </ul>
+      <form className="new-board" onSubmit={create}>
+        <p className="label">NEW BOARD</p>
+        <input
+          value={name} onChange={(e) => setName(e.target.value)} placeholder="Board name" maxLength={60}
+          aria-label="Board name" required
+        />
+        <div className="sizes" role="radiogroup" aria-label="Grid size">
+          {SIZES.map((n) => (
+            <button
+              key={n} type="button" role="radio" aria-checked={size === n}
+              className={`btn ${size === n ? 'on' : ''}`} onClick={() => setSize(n)}
+            >
+              {n}×{n}
+            </button>
+          ))}
+        </div>
+        <p className="hint">
+          {size}×{size}: {size} each of {kindsFor(size).map((k) => TAG[k]).join(', ')}. {size * size} photos, {fmt(comboCount(size))} outfits.
+          Size is fixed once the board exists.
+        </p>
+        <button className="btn red" type="submit">+ CREATE BOARD</button>
+      </form>
       <div className="boards-actions">
-        <button className="btn red" onClick={create}>+ NEW BOARD</button>
         <button className="btn" onClick={() => run(exportAll)}>EXPORT BACKUP</button>
         <label className="btn">
           IMPORT BACKUP
@@ -443,7 +527,7 @@ function Boards({ boards, current, onPick, run }: BoardsProps) {
 
 function BoardPreview({ board }: { board: Board }): ReactNode {
   return (
-    <span className="preview">
+    <span className="preview" style={{ '--n': board.size } as CSSProperties}>
       {board.grid.map((s, i) => <Thumb key={i} imageId={s.imageId} fallback="" />)}
     </span>
   )

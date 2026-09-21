@@ -2,6 +2,8 @@
 
 An outfit planner for the sudoku packing method. You put 9 garments on a 3x3 grid (3 tops, 3 bottoms, 3 layers), and every row, every column, and one diagonal reads as a complete outfit. Any top with any bottom with any layer gives 27 outfits from 9 pieces.
 
+Grids go from 3x3 up to 7x7. Each step up adds one more kind of piece (shoes, bag, accessory, outerwear), so rows and columns stay complete outfits at every size.
+
 You use your own photos. Boards are saved by name. Everything stays in your browser: no account, no server.
 
 Method reference: [The Sudoku Packing Method](https://mademoisellejaime.substack.com/p/the-sudoku-packing-method-aka-the).
@@ -69,7 +71,7 @@ Swapping changes which pieces share a row or column, so the 7 rail outfits chang
 
 A saved board. Reload the page and it is still there. From here:
 
-- Make a board per trip under **BOARDS > + NEW BOARD**. All boards share one image library.
+- Make a board per trip under **BOARDS > NEW BOARD**: type a name, pick a size from 3×3 to 7×7, select **+ CREATE BOARD**. The hint under the size buttons tells you which kinds and how many photos that size needs. All boards share one image library.
 - Back it up: see [How to move your boards to another device](#how-to-move-your-boards-to-another-device).
 
 ## How to move your boards to another device
@@ -118,7 +120,7 @@ You get a public URL that redeploys on every push to `main`.
 
 ### Verification
 
-Open the site URL. You see an empty "My first board". In the deploy log, the build step shows `Tests  15 passed` before the Vite build output.
+Open the site URL. You see an empty "My first board". In the deploy log, the build step shows `Tests  50 passed` before the Vite build output.
 
 ### Troubleshooting
 
@@ -145,14 +147,30 @@ The app needs a connection to load. There is no offline mode.
 | Screen | What it holds |
 |---|---|
 | **BOARD** | The grid, the rails, the EXTRAS column, and the outfit viewer. |
-| **ALL 27** | One card per combination, numbered 01 to 27. |
-| **BOARDS** | Board list, create, rename, delete, export, import. |
+| **ALL n** | One card per combination (n is 27 for 3x3, up to 823,543 for 7x7). Shown 60 per page. Above one page you get **‹ PAGE**, **PAGE ›**, and **RANDOM OUTFIT**, which jumps to a random combination and opens it. |
+| **BOARDS** | Board list with size and fill count, create (name + size), rename, delete, export, import. |
 
 On screens narrower than 1024px, the three screen buttons sit in a fixed bottom bar, the layout is one column, EXTRAS is a row under the grid, and the viewer is a bottom sheet.
 
+### Sizes and kinds
+
+A size-N board is an N×N grid holding N kinds of piece, N of each. Size is chosen when the board is created and cannot change afterwards.
+
+| Size | Kinds in the grid | Photos | Outfits (N^N) | EXTRAS strip |
+|---|---|---|---|---|
+| 3×3 | TOP, BOTTOM, LAYER | 9 | 27 | 3 shoes + 1 bag |
+| 4×4 | + SHOES | 16 | 256 | 1 bag |
+| 5×5 | + BAG | 25 | 3,125 | none |
+| 6×6 | + ACCESSORY | 36 | 46,656 | none |
+| 7×7 | + OUTERWEAR | 49 | 823,543 | none |
+
+Shoes and the bag sit in EXTRAS only while the grid is too small to hold them as kinds. Extras are shown with every outfit but do not count toward the outfit number.
+
+Square tags show the full word. They shorten to three letters (TOP, BOT, LAY, SHO, BAG, ACC, OUT) on 6×6 and 7×7, and on 5×5 when the screen is narrower than 1024px. The viewer always captions each piece with the full word.
+
 ### Grid layout
 
-Positions are numbered 0 to 8 in reading order. Categories are fixed:
+Positions are numbered from 0 in reading order. Kinds are fixed per position. 3×3:
 
 ```
         C1      C2      C3
@@ -161,29 +179,43 @@ R2    3 L     4 T     5 B
 R3    6 B     7 L     8 T
 ```
 
+Odd sizes (3, 5, 7) follow the same pattern: each row is the row above shifted one step right. Even sizes use fixed squares, by kind number (0 = TOP, 1 = BOTTOM, 2 = LAYER, 3 = SHOES, 4 = BAG, 5 = ACCESSORY):
+
+```
+4×4           6×6
+0 1 2 3       0 1 2 3 4 5
+2 3 0 1       1 0 3 5 2 4
+3 2 1 0       2 3 4 0 5 1
+1 0 3 2       4 5 1 2 0 3
+              5 4 0 1 3 2
+              3 2 5 4 1 0
+```
+
 ### Lines
+
+Every size has rails R1..RN, C1..CN, and **D**, the diagonal from bottom-left to top-right: 2N + 1 rails. The other diagonal is never a complete outfit in these layouts, so it has no rail.
+
+3×3 rails:
 
 | Rail | Grid positions | Outfit number |
 |---|---|---|
-| R1 | 0, 1, 2 | 01 |
+| R1 | 0, 1, 2 | 1 |
 | R2 | 3, 4, 5 | 14 |
 | R3 | 6, 7, 8 | 27 |
-| C1 | 0, 3, 6 | 08 |
+| C1 | 0, 3, 6 | 8 |
 | C2 | 1, 4, 7 | 12 |
 | C3 | 2, 5, 8 | 22 |
-| D | 6, 4, 2 (bottom-left to top-right) | 16 |
-
-The other diagonal (0, 4, 8) is three tops, so it is not an outfit and has no rail.
+| D | 6, 4, 2 | 16 |
 
 ### Outfit numbering
 
-Tops sit at positions 0, 4, 8. Bottoms at 1, 5, 6. Layers at 2, 3, 7. Counting from zero within each category, in that order:
+Within each kind, pieces are indexed from zero by grid position. An outfit is one index per kind, read as a base-N number with TOP as the most significant digit, plus 1:
 
 ```
-number = topIndex * 9 + bottomIndex * 3 + layerIndex + 1
+number = (((top * N + bottom) * N + layer) * N + ...) + 1
 ```
 
-Example: R2 is the layer at position 3 (index 1), the top at 4 (index 1), the bottom at 5 (index 1), so `1*9 + 1*3 + 1 + 1 = 14`. The viewer always shows pieces in top, bottom, layer order.
+3×3 example: tops sit at positions 0, 4, 8, bottoms at 1, 5, 6, layers at 2, 3, 7. R2 is the layer at 3 (index 1), the top at 4 (index 1), the bottom at 5 (index 1), so `1*9 + 1*3 + 1 + 1 = 14`. The viewer always shows pieces in kind order.
 
 ### Actions
 
@@ -193,9 +225,9 @@ Example: R2 is the layer at position 3 (index 1), the top at 4 (index 1), the bo
 | Set one square | Select the square, then **UPLOAD NEW** or a library photo | Only that square changes. Its category tag does not. |
 | Drop a file | Drag an image file from your computer onto a square | Same as **UPLOAD NEW**. Only the first file is used. |
 | Clear a square | Select the square, **CLEAR SQUARE** | Square is empty. The photo stays in the library. |
-| Swap two pieces | Drag a filled square onto another square. Touch: hold 250 ms, then drag | Photos swap. Allowed only between grid squares of the same category, or between the three shoe squares. The bag square has no swap partner. |
+| Swap two pieces | Drag a filled square onto another square. Touch: hold 250 ms, then drag | Photos swap. Allowed only between grid squares of the same kind, or between shoe squares in EXTRAS. A lone bag square in EXTRAS has no swap partner. |
 | Delete a photo | Square sheet, **×** on a library photo, confirm | Removed from the library and from every square on every board. |
-| Cycle shoes | **SHOES n/3** in the viewer | Changes which shoe square the viewer shows. Saved per board. |
+| Cycle shoes | **SHOES n/3** in the viewer (3×3 boards only) | Changes which EXTRAS shoe the viewer shows. Saved per board. |
 | Close sheet | **CANCEL**, select outside it, or Escape | |
 
 ### Image handling
@@ -214,37 +246,46 @@ Rejections appear in the red notice under the header. Other files in the same ba
 ### Data model (`src/model.ts`)
 
 ```ts
-type Category = 'top' | 'bottom' | 'layer'
+type Kind = 'top' | 'bottom' | 'layer' | 'shoes' | 'bag' | 'accessory' | 'outerwear'
 type ExtraKind = 'shoe' | 'bag'
 
 interface ImageAsset { id: string; blob: Blob; name: string; source: 'upload' | 'generated'; createdAt: number }
-interface Slot  { category: Category; imageId: string | null }
-interface Extra { kind: ExtraKind;   imageId: string | null }
+interface Slot  { category: Kind;  imageId: string | null }
+interface Extra { kind: ExtraKind; imageId: string | null }
 
 interface Board {
   id: string
   name: string
-  grid: Slot[]      // length 9, reading order
-  extras: Extra[]   // shoe, shoe, shoe, bag
-  shoeIdx: number   // 0..2, which shoe the viewer shows
+  size: number      // 3..7
+  grid: Slot[]      // length size*size, reading order
+  extras: Extra[]   // see Sizes and kinds
+  shoeIdx: number   // which EXTRAS shoe the viewer shows
   createdAt: number
   updatedAt: number
 }
 ```
 
+Boards saved before sizes existed have no `size`. They are read as 3×3: the database upgrades them in place (schema version 2), and old backup files import the same way.
+
 `source: 'generated'` is reserved for a future AI image feature. Nothing writes it today.
 
 | Export | Signature | Does |
 |---|---|---|
-| `LAYOUT` | `readonly Category[]` | The fixed 9-position category layout. |
-| `LINES` | `Record<LineId, [number, number, number]>` | Grid positions per rail. |
-| `isLatinSquare` | `(cats: readonly Category[]) => boolean` | True when every row and column has 3 distinct categories. False unless length is 9. |
-| `slotsOf` | `(category) => number[]` | Grid positions of a category, in order. |
-| `comboSlots` | `(n: number) => [top, bottom, layer]` | Grid positions for outfit `n`. Throws `RangeError` outside 1..27. |
-| `comboNumber` | `(slots: readonly number[]) => number` | Inverse of `comboSlots`. Throws if a category is missing. |
-| `lineCombo` | `(line: LineId) => number` | Outfit number of a rail. |
-| `canSwap` | `(a: number, b: number) => boolean` | True for two different grid positions of the same category. |
-| `newBoard` | `(name: string, now?: number) => Board` | Empty board with a random id. |
+| `SIZES` | `readonly number[]` | `[3, 4, 5, 6, 7]`. Functions below throw `RangeError` for any other size. |
+| `KINDS` | `readonly Kind[]` | All 7 kinds in order. |
+| `kindsFor` | `(size) => readonly Kind[]` | The first `size` kinds. |
+| `layoutFor` | `(size) => readonly Kind[]` | The fixed kind layout, `size*size` long. |
+| `linesFor` | `(size) => Record<LineId, readonly number[]>` | Grid positions per rail: `R1..RN`, `C1..CN`, `D`. |
+| `comboCount` | `(size) => number` | `size ** size`. |
+| `isLatinSquare` | `(cats, size) => boolean` | True when every row and column has `size` distinct kinds. False on wrong length. |
+| `slotsOf` | `(size, kind) => number[]` | Grid positions of a kind, in order. |
+| `comboSlots` | `(size, n) => number[]` | Grid positions for outfit `n`, in kind order. Throws `RangeError` outside `1..comboCount(size)`. |
+| `comboNumber` | `(size, slots) => number` | Inverse of `comboSlots`. Throws if a kind is missing. |
+| `lineCombo` | `(size, line) => number` | Outfit number of a rail. Throws on a rail that does not exist at that size. |
+| `canSwap` | `(size, a, b) => boolean` | True for two different grid positions of the same kind. |
+| `extrasFor` | `(size) => Extra[]` | The empty EXTRAS strip for a size. |
+| `newBoard` | `(name, size = 3, now?) => Board` | Empty board with a random id. |
+| `normalizeBoard` | `(board) => Board` | Defaults a missing `size` to 3. Throws if the grid length is not `size*size`. |
 | `fillEmpty` | `(board, imageIds) => { board, rest }` | Fills empty grid squares, then empty extras. Returns unused ids. Does not mutate. |
 | `removeImage` | `(board, imageId) => Board` | Clears every square that uses the image. Does not mutate. |
 
@@ -267,12 +308,12 @@ Filename: `sudoku-combiner-YYYY-MM-DD.json`.
 {
   "version": 1,
   "exportedAt": 1789948000000,
-  "boards": [ { "id": "…", "name": "Lisbon Weekend", "grid": [], "extras": [], "shoeIdx": 0, "createdAt": 0, "updatedAt": 0 } ],
+  "boards": [ { "id": "…", "name": "Lisbon Weekend", "size": 3, "grid": [], "extras": [], "shoeIdx": 0, "createdAt": 0, "updatedAt": 0 } ],
   "images": [ { "id": "…", "name": "blazer.png", "source": "upload", "createdAt": 0, "type": "image/webp", "data": "<base64>" } ]
 }
 ```
 
-Import rules: an image whose `id` already exists is skipped. A board whose `id` already exists is imported under a new id as `<name> (imported)`. Nothing is overwritten. Boards and images are written in one transaction, so a failed import leaves nothing half-written.
+Import rules: an image whose `id` already exists is skipped. A board whose `id` already exists is imported under a new id as `<name> (imported)`. Nothing is overwritten. A board whose grid does not fit its size rejects the whole file with `Board "<name>" does not fit a NxN grid.` Boards and images are written in one transaction, so a failed import leaves nothing half-written.
 
 ### `netlify.toml`
 
@@ -289,21 +330,31 @@ Import rules: an image whose `id` already exists is skipped. A board whose `id` 
 
 ### Category positions are fixed
 
-The method needs a latin square: each category exactly once in every row and every column. That is what makes every row and column a wearable outfit.
+The method needs a latin square: each kind exactly once in every row and every column. That is what makes every row and column a wearable outfit.
 
-**The problem.** Letting you drag any square anywhere seems friendlier. But in a 3x3 latin square, swapping any two squares of different categories always breaks it. Swap a top and a bottom in the same row, and both of their columns now hold a duplicate. Swap across rows, and both rows and both columns break. There is no cross-category swap that survives. `src/model.test.ts` checks all 27 such pairs.
+**The problem.** Letting you drag any square anywhere seems friendlier. But in a latin square of any size, swapping any two squares of different kinds always breaks it. Swap a top and a bottom in the same row, and both of their columns now hold a duplicate. Swap across rows, and both rows and both columns break. There is no cross-category swap that survives. `src/model.test.ts` checks every such pair at every size.
 
 **The approach.** Positions own their category. Photos move, tags do not. A swap is only offered between squares of the same category, so the board cannot reach a broken state, and there is no error state to design or explain. Invalid targets fade while you drag so the rule is visible without reading anything.
 
-**Trade-off.** You cannot pick a different latin square layout. The app ships the one from the method article. Whole-row or whole-column swaps would preserve the square and are not built.
+**Trade-off.** You cannot pick a different layout or rename the kinds. The app ships the 3×3 from the method article and extends it. Whole-row or whole-column swaps would preserve the square and are not built.
+
+### Bigger grids add kinds, not just pieces
+
+**The problem.** The article's larger version is 4 tops, 4 bottoms, 4 layers: 12 pieces. That is a 3-column list, not a square, so it has no column or diagonal outfits and a "4×4" label would be false.
+
+**The approach.** An N×N latin square needs N kinds. Each size adds the next most useful kind, and shoes and bag move from the EXTRAS strip into the grid as soon as it can hold them. Every rail stays a complete outfit.
+
+**Trade-offs.** Photo count grows as N² (49 at 7×7). Outfit count grows as N^N, so past 3×3 nobody browses them all: the view pages 60 at a time and offers a random jump. A 7×7 on a phone has squares about 41px wide, below the usual 44px touch target.
+
+**Why even sizes have their own layouts.** The shift-right pattern gives a complete-outfit diagonal only when N is odd. For 4 and 6 the app uses hand-picked squares that do have one, and the tests verify them.
 
 ### Only one diagonal
 
-With this layout, the bottom-left to top-right diagonal holds a bottom, a top, and a layer. The other diagonal holds three tops. So there is one **D** rail, and it points up and to the right.
+In the 3×3, the bottom-left to top-right diagonal holds a bottom, a top, and a layer. The other diagonal holds three tops. So there is one **D** rail, and it points up and to the right.
 
-### Shoes and bag stay outside the 27
+### Extras stay outside the outfit number
 
-Shoes multiply outfits (3 pairs would make 81), but the method counts them as styling on top of an outfit, not as part of the grid. Keeping them as display-only extras keeps outfit numbers stable: outfit 14 is the same three garments whatever shoes are showing.
+On a 3×3, shoes would multiply outfits (3 pairs would make 81), but the method counts them as styling on top of an outfit, not as part of the grid. Keeping them as display-only extras keeps outfit numbers stable: outfit 14 is the same three garments whatever shoes are showing.
 
 ### Local-only storage
 
@@ -325,7 +376,7 @@ Images are treated as immutable: same id means same bytes, so skipping is safe. 
 
 ```bash
 npm run dev      # dev server with hot reload
-npm test         # 15 unit tests: layout, lines, numbering, board ops, export/import
+npm test         # 50 unit tests: every size's layout, lines, numbering; board ops; export/import
 npm run lint     # oxlint
 npm run build    # type-check, then static build into dist/
 npm run preview  # serve dist/ locally

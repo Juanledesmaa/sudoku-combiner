@@ -14,6 +14,13 @@ db.version(1).stores({
   images: 'id, createdAt',
 })
 
+// v2: boards gained `size`. Everything saved before that is a 3x3.
+db.version(2).upgrade((tx) =>
+  tx.table('boards').toCollection().modify((b: { size?: number }) => {
+    b.size ??= 3
+  }),
+)
+
 const MAX_BYTES = 15 * 1024 * 1024
 const MAX_EDGE = 1200
 const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp']
@@ -23,8 +30,8 @@ export async function saveBoard(board: Board): Promise<void> {
   await db.boards.put({ ...board, updatedAt: Date.now() })
 }
 
-export async function createBoard(name: string): Promise<Board> {
-  const board = newBoard(name)
+export async function createBoard(name: string, size = 3): Promise<Board> {
+  const board = newBoard(name, size)
   await db.boards.add(board)
   return board
 }

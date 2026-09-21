@@ -1,3 +1,4 @@
+import { normalizeBoard } from './model'
 import type { Board, ImageAsset } from './model'
 
 export const EXPORT_VERSION = 1
@@ -54,7 +55,7 @@ export function parse(json: string): { boards: Board[]; images: ImageAsset[] } {
     throw new Error('Not a Sudoku Combiner export (version 1).')
   }
   const images = file.images.map(({ data, type, ...rest }) => ({ ...rest, blob: new Blob([fromBase64(data)], { type }) }))
-  return { boards: file.boards, images }
+  return { boards: file.boards.map(normalizeBoard), images }
 }
 
 export interface MergePlan {
